@@ -25,11 +25,21 @@ pub trait CurveExt:
     + From<<Self as PrimeCurve>::Affine>
 {
     /// The scalar field of this elliptic curve.
-    type ScalarExt: ff::WithSmallOrderMulGroup<3>;
+    type ScalarExt: ff::WithSmallOrderMulGroup<3> + Ord;
     /// The base field over which this elliptic curve is constructed.
     type Base: ff::WithSmallOrderMulGroup<3>;
-    /// The affine version of the curve
-    type AffineExt: CurveAffine<CurveExt = Self, ScalarExt = <Self as CurveExt>::ScalarExt>
+    /// The affine version of the curve.
+    ///
+    /// Callers needing the extended affine interface must additionally require
+    /// `Self::AffineExt: CurveAffine<CurveExt = Self, ScalarExt = Self::ScalarExt>`.
+    type AffineExt: PrimeCurveAffine<Curve = Self, Scalar = <Self as CurveExt>::ScalarExt>
+        + CurveAffineCoordinates
+        + Default
+        + Add<Output = Self>
+        + Sub<Output = Self>
+        + ConditionallySelectable
+        + ConstantTimeEq
+        + From<Self>
         + Mul<Self::ScalarExt, Output = Self>
         + for<'r> Mul<Self::ScalarExt, Output = Self>;
 
@@ -64,13 +74,24 @@ pub trait CurveExt:
     /// if the coordinates are not on the curve.
     fn new_jacobian(x: Self::Base, y: Self::Base, z: Self::Base) -> CtOption<Self>;
 }
+
+/// The base field used to represent coordinates of a particular affine curve.
+///
+/// Keeping this association separate from [`CurveAffine`] lets the coordinate
+/// data type retain its curve parameter without depending on the full trait.
+pub trait CurveAffineCoordinates {
+    /// The base field over which this elliptic curve is constructed.
+    type Base: ff::WithSmallOrderMulGroup<3> + Ord;
+}
+
 /// This trait is the affine counterpart to `Curve` and is used for
 /// serialization, storage in memory, and inspection of $x$ and $y$ coordinates.
 ///
 /// Requires the `alloc` feature flag because of `hash_to_curve` on
 /// [`CurveExt`].
 pub trait CurveAffine:
-    PrimeCurveAffine<
+    CurveAffineCoordinates
+    + PrimeCurveAffine<
         Scalar = <Self as CurveAffine>::ScalarExt,
         Curve = <Self as CurveAffine>::CurveExt,
     > + Default
@@ -82,8 +103,6 @@ pub trait CurveAffine:
 {
     /// The scalar field of this elliptic curve.
     type ScalarExt: ff::WithSmallOrderMulGroup<3> + Ord;
-    /// The base field over which this elliptic curve is constructed.
-    type Base: ff::WithSmallOrderMulGroup<3> + Ord;
     /// The projective form of the curve
     type CurveExt: CurveExt<AffineExt = Self, ScalarExt = <Self as CurveAffine>::ScalarExt>;
 
@@ -109,7 +128,7 @@ pub trait CurveAffine:
 
 /// The affine coordinates of a point on an elliptic curve.
 #[derive(Clone, Copy, Debug, Default)]
-pub struct Coordinates<C: CurveAffine> {
+pub struct Coordinates<C: CurveAffineCoordinates> {
     pub(crate) x: C::Base,
     pub(crate) y: C::Base,
 }
